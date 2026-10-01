@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>APOGEE · Track what's above</title>
+<meta name="description" content="Live satellite tracker — mission control in your browser.">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&family=Orbitron:wght@700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<canvas id="starfield"></canvas>
+<div class="nebula nebula-1" aria-hidden="true"></div>
+<div class="nebula nebula-2" aria-hidden="true"></div>
+<div class="vignette" aria-hidden="true"></div>
+
+<header class="hud">
+  <div class="logo">
+    <svg viewBox="0 0 40 40" class="logo-mark" aria-hidden="true">
+      <defs>
+        <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#4cc9f0"/>
+          <stop offset="100%" stop-color="#8b7cff"/>
+        </linearGradient>
+      </defs>
+      <ellipse cx="20" cy="20" rx="16" ry="6" transform="rotate(-30 20 20)" stroke="url(#logoGrad)" stroke-width="1" fill="none" opacity="0.4"/>
+      <path d="M 4 30 Q 20 2 36 30" stroke="url(#logoGrad)" stroke-width="1.5" fill="none"/>
+      <circle cx="20" cy="9" r="3" fill="url(#logoGrad)"/>
+      <circle cx="20" cy="9" r="7" fill="url(#logoGrad)" opacity="0.18"/>
+    </svg>
+    <div class="logo-text">
+      <span class="wordmark">APOGEE</span>
+      <span class="tagline">Track what's above</span>
+    </div>
+  </div>
+
+  <div class="hud-center">
+    <span class="clock-label">UTC</span>
+    <span id="utcClock" class="clock">--:--:--</span>
+  </div>
+
+  <div class="hud-right">
+    <div class="status-pill live"><span class="pulse-dot"></span>Live</div>
+    <div class="status-pill"><b id="satCount">0</b>&nbsp;objects</div>
+  </div>
+</header>
+
+<main class="map-wrap">
+  <div id="map"></div>
+
+  <!-- Left column: detail + pass widget stack so they can never overlap -->
+  <div class="left-stack">
+    <section class="detail-panel" id="detailPanel" hidden>
+      <button class="close-btn" id="closeDetail" aria-label="Close details">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+
+      <div class="detail-header">
+        <span class="detail-dot" id="detailDot"></span>
+        <div class="detail-titles">
+          <h2 id="detailName">—</h2>
+          <p class="detail-sub"><span id="detailOperator">—</span><span class="sep">·</span><span id="detailNorad">—</span></p>
+        </div>
+      </div>
+
+      <div class="data-grid">
+        <div class="data-cell">
+          <div class="detail-label">Altitude</div>
+          <div class="detail-value accent"><span id="dAlt">—</span><small>km</small></div>
+        </div>
+        <div class="data-cell">
+          <div class="detail-label">Velocity</div>
+          <div class="detail-value accent"><span id="dVel">—</span><small>km/s</small></div>
+        </div>
+        <div class="data-cell">
+          <div class="detail-label">Latitude</div>
+          <div class="detail-value" id="dLat">—</div>
+        </div>
+        <div class="data-cell">
+          <div class="detail-label">Longitude</div>
+          <div class="detail-value" id="dLon">—</div>
+        </div>
+        <div class="data-cell">
+          <div class="detail-label">Period</div>
+          <div class="detail-value"><span id="dPeriod">—</span><small>min</small></div>
+        </div>
+        <div class="data-cell">
+          <div class="detail-label">Inclination</div>
+          <div class="detail-value"><span id="dInc">—</span><small>°</small></div>
+        </div>
+      </div>
+
+      <div class="detail-actions">
+        <button class="action-btn primary" id="trackBtn" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+          <span id="trackLabel">Follow</span>
+        </button>
+        <button class="action-btn" id="celestrakBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><path d="M15 3h6v6M10 14L21 3"/></svg>
+          Open on N2YO
+        </button>
+      </div>
+    </section>
+
+    <section class="pass-widget" id="passWidget">
+      <div class="widget-header"><span class="widget-dot"></span>Next ISS pass</div>
+      <div class="widget-body" id="passBody">
+        <p class="widget-hint">Share your location to see when the ISS flies over you.</p>
+        <button class="action-btn primary small" id="locBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+          Use my location
+        </button>
+      </div>
+    </section>
+  </div>
+
+  <aside class="sidebar" id="sidebar">
+    <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle satellite panel">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+    </button>
+
+    <div class="sidebar-header">
+      <div class="sidebar-title">
+        <span>Satellites</span>
+        <span class="badge" id="listCount">0</span>
+      </div>
+
+      <div class="search-box">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="searchInput" type="text" placeholder="Search any satellite by name or NORAD ID" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="searchResults">
+        <button class="search-clear" id="searchClear" aria-label="Clear search" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+        <div class="search-results" id="searchResults" role="listbox" hidden></div>
+      </div>
+    </div>
+
+    <div class="sat-list" id="satList"></div>
+
+    <details class="constellations">
+      <summary>
+        <span>Load a constellation</span>
+        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </summary>
+      <div class="chip-grid">
+        <button class="chip" data-group="gps-ops"><span class="chip-label">GPS</span><span class="chip-count">~31</span></button>
+        <button class="chip" data-group="galileo"><span class="chip-label">Galileo</span><span class="chip-count">~28</span></button>
+        <button class="chip" data-group="weather"><span class="chip-label">Weather</span><span class="chip-count">~200</span></button>
+        <button class="chip" data-group="science"><span class="chip-label">Science</span><span class="chip-count">~100</span></button>
+        <button class="chip" data-group="stations"><span class="chip-label">Space stations</span><span class="chip-count">~10</span></button>
+        <button class="chip" data-group="iridium"><span class="chip-label">Iridium</span><span class="chip-count">~80</span></button>
+        <button class="chip" data-group="globalstar"><span class="chip-label">Globalstar</span><span class="chip-count">~50</span></button>
+        <button class="chip" data-group="amateur"><span class="chip-label">Amateur radio</span><span class="chip-count">~100</span></button>
+      </div>
+    </details>
+  </aside>
+
+  <button class="ground-toggle" id="groundToggle" aria-pressed="false">
+    <span class="toggle-indicator"></span>
+    <span>Ground track</span>
+  </button>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</main>
+
+<footer class="statusbar">
+  <div class="status-left">
+    <span class="status-chip">APOGEE v3.1</span>
+    <span class="status-muted">Data: CelesTrak · SGP4</span>
+    <span class="status-muted">Map © Esri · Leaflet</span>
+  </div>
+  <div class="status-center">
+    Last update <span id="lastUpdate" class="status-value">--:--:--</span>
+  </div>
+  <div class="status-right">
+    <span class="status-muted">Map center</span>
+    <span id="mapCenter" class="status-value">0.00°, 0.00°</span>
+  </div>
+</footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/satellite.js@5.0.0/dist/satellite.min.js"></script>
+<script src="data.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
